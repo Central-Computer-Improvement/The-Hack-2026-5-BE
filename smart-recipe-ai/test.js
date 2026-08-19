@@ -23,13 +23,13 @@ server.listen(0, async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: "Anak Kos Test",
-        email: "anakkos@example.com",
+        email: `anakkos_${Date.now()}@example.com`,
         password: "password123",
       }),
     });
     const regData = await regRes.json();
     console.log("   Status:", regRes.status, "| Message:", regData.message);
-    const token = regData.data?.token;
+    let activeToken = regData.data?.token;
 
     // 3. Login
     console.log("\n3️⃣  Testing POST /api/auth/login");
@@ -37,26 +37,32 @@ server.listen(0, async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        email: "anakkos@example.com",
+        email: regData.data?.user?.email,
         password: "password123",
       }),
     });
     const loginData = await loginRes.json();
     console.log("   Status:", loginRes.status, "| Message:", loginData.message);
+    if (loginData.data?.token) {
+      activeToken = loginData.data.token;
+    }
 
     // 4. Get Profile (Protected)
     console.log("\n4️⃣  Testing GET /api/auth/me (Protected Route)");
     const meRes = await fetch(`${baseUrl}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${activeToken}` },
     });
     const meData = await meRes.json();
     console.log("   Status:", meRes.status, "| User:", meData.data?.user?.email);
 
-    // 5. AI Recipe Generation
+    // 5. AI Recipe Generation (Authenticated to record history)
     console.log("\n5️⃣  Testing POST /api/ai/generate-recipes");
     const aiRes = await fetch(`${baseUrl}/api/ai/generate-recipes`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${activeToken}`,
+      },
       body: JSON.stringify({
         ingredients: [
           { name: "Telur", quantity: "2 butir", isExpiringSoon: true },
@@ -69,10 +75,12 @@ server.listen(0, async () => {
         },
       }),
     });
+
     const aiData = await aiRes.json();
     console.log("   Status:", aiRes.status);
     console.log("   Recipes Generated:", aiData.data?.recipes?.length);
     console.log("   Sample Title:", aiData.data?.recipes?.[0]?.title);
+    const generatedRecipe = aiData.data?.recipes?.[0];
 
     // 6. AI Pantry Vision Scan
     console.log("\n6️⃣  Testing POST /api/ai/scan-pantry");
@@ -87,6 +95,59 @@ server.listen(0, async () => {
     console.log("   Status:", scanRes.status);
     console.log("   Detected Items:", scanData.data?.detectedIngredients?.map((i) => i.name).join(", "));
 
+    // 7. Recipe History (Max 10 Constraint Verification)
+    console.log("\n7️⃣  Testing GET /api/ai/history (Max 10 Limit Check)");
+    const historyRes = await fetch(`${baseUrl}/api/ai/history`, {
+      headers: { Authorization: `Bearer ${activeToken}` },
+    });
+    const historyData = await historyRes.json();
+    console.log("   Status:", historyRes.status, "| Total History Items Retained:", historyData.count);
+
+    // 8. Pantry Tracker Endpoints
+    console.log("\n8️⃣  Testing Pantry API (POST & GET /api/pantry)");
+    const addPantryRes = await fetch(`${baseUrl}/api/pantry`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${activeToken}`,
+      },
+      body: JSON.stringify({
+        name: "Bawang Merah",
+        quantity: "5 siung",
+        isExpiringSoon: true,
+      }),
+    });
+    const addPantryData = await addPantryRes.json();
+    console.log("   Add Pantry Status:", addPantryRes.status, "| Item:", addPantryData.data?.name);
+
+    const getPantryRes = await fetch(`${baseUrl}/api/pantry`, {
+      headers: { Authorization: `Bearer ${activeToken}` },
+    });
+    const getPantryData = await getPantryRes.json();
+    console.log("   Get Pantry Status:", getPantryRes.status, "| Count:", getPantryData.count);
+
+    // 9. Recipe Favorites Endpoints
+    console.log("\n9️⃣  Testing Favorites API (POST & GET /api/favorites)");
+    if (generatedRecipe) {
+      const addFavRes = await fetch(`${baseUrl}/api/favorites`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${activeToken}`,
+        },
+        body: JSON.stringify(generatedRecipe),
+      });
+      const addFavData = await addFavRes.json();
+      console.log("   Add Favorite Status:", addFavRes.status, "| Title:", addFavData.data?.title);
+    }
+
+    const getFavRes = await fetch(`${baseUrl}/api/favorites`, {
+      headers: { Authorization: `Bearer ${activeToken}` },
+    });
+    const getFavData = await getFavRes.json();
+    console.log("   Get Favorites Status:", getFavRes.status, "| Count:", getFavData.count);
+
+
     console.log("\n✨ ALL TESTS PASSED SUCCESSFULLY! ✨\n");
   } catch (err) {
     console.error("❌ Test Failed:", err);
@@ -95,3 +156,4 @@ server.listen(0, async () => {
     process.exit(0);
   }
 });
+

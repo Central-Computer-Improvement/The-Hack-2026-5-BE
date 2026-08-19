@@ -1,6 +1,6 @@
 const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = process.env.JWT_SECRET || "smart_recipe_ai_secret_key_2026";
+const getJwtSecret = () => process.env.JWT_SECRET || "smart_recipe_ai_secret_key_2026";
 
 /**
  * Express Middleware to Protect Routes
@@ -15,7 +15,7 @@ const protect = (req, res, next) => {
   ) {
     try {
       token = req.headers.authorization.split(" ")[1];
-      const decoded = jwt.verify(token, JWT_SECRET);
+      const decoded = jwt.verify(token, getJwtSecret());
       req.user = decoded; // Attach user info to request
       return next();
     } catch (error) {
@@ -34,4 +34,26 @@ const protect = (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+/**
+ * Express Middleware for Optional Authentication
+ * Attaches req.user if Bearer Token exists, otherwise proceeds
+ */
+const optionalProtect = (req, res, next) => {
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer")
+  ) {
+    try {
+      const token = req.headers.authorization.split(" ")[1];
+      const decoded = jwt.verify(token, getJwtSecret());
+      req.user = decoded;
+    } catch (error) {
+      // Ignore token verification errors for optional auth
+    }
+  }
+  next();
+};
+
+module.exports = { protect, optionalProtect };
+
+

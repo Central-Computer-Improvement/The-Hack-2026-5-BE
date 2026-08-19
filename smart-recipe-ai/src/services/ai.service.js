@@ -1,21 +1,28 @@
 const { GoogleGenAI } = require("@google/genai");
+const prisma = require("../config/db");
 
-// Retrieve Gemini API key from environment variables
-const apiKey = process.env.GEMINI_API_KEY;
-let aiClient = null;
+// In-memory fallback recipe history store: Map<userId, Array<Recipe>>
+const inMemoryHistory = new Map();
 
-if (apiKey && apiKey !== "your_gemini_api_key_here") {
-  try {
-    aiClient = new GoogleGenAI({ apiKey });
-  } catch (err) {
-    console.warn("Failed to initialize GoogleGenAI client:", err.message);
+/**
+ * Get GoogleGenAI client instance
+ */
+const getAiClient = () => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (apiKey && apiKey !== "your_gemini_api_key_here") {
+    try {
+      return new GoogleGenAI({ apiKey });
+    } catch (err) {
+      console.warn("Failed to initialize GoogleGenAI client:", err.message);
+    }
   }
-}
+  return null;
+};
 
 /**
  * Generate Zero-Waste Recipes using Gemini AI
  */
-const generateRecipes = async ({ ingredients, kitchenFilters = {} }) => {
+const generateRecipes = async ({ ingredients, kitchenFilters = {}, userId = null }) => {
   const { tools = ["Kompor", "Rice Cooker"], maxDurationMinutes = 30 } = kitchenFilters;
 
   // Format ingredients list for prompt
@@ -72,35 +79,172 @@ KEMBALIKAN DALAM FORMAT JSON RIGID PERSIS SESUAI STRUKTUR DI BAWAH:
 }
 `;
 
-  // If Gemini API Key is available, invoke real AI API
-  if (aiClient) {
-    try {
-      const response = await aiClient.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: promptText,
-        config: {
-          responseMimeType: "application/json",
-        },
-      });
+  let resultData = null;
+  const aiClient = getAiClient();
 
-      const responseText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (responseText) {
-        const parsed = JSON.parse(responseText);
-        return parsed;
+  if (aiClient) {
+    const candidateModels = ["gemini-2.5-flash"];
+
+
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await aiClient.models.generateContent({
+          model: modelName,
+          contents: promptText,
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
+
+        const responseText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (responseText) {
+          resultData = JSON.parse(responseText);
+          break; // Successfully got response from Gemini AI
+        }
+      } catch (err) {
+        console.warn(`Gemini API Call with model ${modelName} failed:`, err.message);
       }
-    } catch (err) {
-      console.error("Gemini API Call failed, switching to smart fallback:", err.message);
     }
   }
 
-  // Smart Fallback / Mock Generator when API Key is missing or failing
-  return getMockRecipes(ingredients, tools, maxDurationMinutes);
+  if (!resultData) {
+    console.warn("All Gemini API models failed or API Key missing, switching to smart mock generator");
+    resultData = getMockRecipes(ingredients, tools, maxDurationMinutes);
+  }
+
+
+  // Save to history if userId is provided
+  if (userId && resultData && Array.isArray(resultData.recipes)) {
+    await saveToHistory(userId, resultData.recipes);
+  }
+
+  return resultData;
 };
 
 /**
- * Scan Pantry Vision: Extract ingredients from photo
+ * Save generated recipes to user history (Max 10 history items)
  */
-const scanPantryImage = async ({ imageBase64 }) => {
+const saveToHistory = async (userId, recipes) => {
+  // Prisma DB Operation if connected
+  if (prisma) {
+    try {
+      for (const recipe of recipes) {
+        await prisma.recipeHistory.create({
+          data: {
+            userId,
+            title: recipe.title || "Resep Zero-Waste",
+            description: recipe.description || "",
+            prepTimeMinutes: recipe.prepTimeMinutes || 15,
+            cookingTools: recipe.cookingTools || [],
+            usedIngredients: recipe.usedIngredients || [],
+            missingIngredients: recipe.missingIngredients || [],
+            estimatedSavings: recipe.estimatedSavings || {},
+            steps: recipe.steps || [],
+          },
+        });
+      }
+
+      // Maintain Max 10 History items: fetch all items sorted descending
+      const allHistory = await prisma.recipeHistory.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (allHistory.length > 10) {
+        const excessItems = allHistory.slice(10);
+        const excessIds = excessItems.map((item) => item.id);
+        await prisma.recipeHistory.deleteMany({
+          where: { id: { in: excessIds } },
+        });
+      }
+      return;
+    } catch (err) {
+      console.warn("DB operation failed, using in-memory recipe history:", err.message);
+    }
+  }
+
+  // Fallback in-memory history handling
+  if (!inMemoryHistory.has(userId)) {
+    inMemoryHistory.set(userId, []);
+  }
+  const userHistory = inMemoryHistory.get(userId);
+
+  for (const recipe of recipes) {
+    const historyItem = {
+      id: `hist_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      ...recipe,
+      createdAt: new Date().toISOString(),
+    };
+    userHistory.unshift(historyItem); // insert at start
+  }
+
+  // Trim to max 10 items
+  if (userHistory.length > 10) {
+    inMemoryHistory.set(userId, userHistory.slice(0, 10));
+  }
+};
+
+/**
+ * Get user recipe history (Max 10 items)
+ */
+const getRecipeHistory = async (userId) => {
+  if (prisma) {
+    try {
+      const history = await prisma.recipeHistory.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      });
+      if (history && history.length > 0) {
+        return history;
+      }
+    } catch (err) {
+      console.warn("DB operation failed, fetching in-memory recipe history:", err.message);
+    }
+  }
+
+  return (inMemoryHistory.get(userId) || []).slice(0, 10);
+};
+
+/**
+ * Clear recipe history for a user
+ */
+const clearRecipeHistory = async (userId) => {
+  if (prisma) {
+    try {
+      await prisma.recipeHistory.deleteMany({
+        where: { userId },
+      });
+    } catch (err) {
+      console.warn("DB operation failed for clearing recipe history:", err.message);
+    }
+  }
+
+  inMemoryHistory.set(userId, []);
+  return { message: "Recipe history cleared successfully" };
+};
+
+/**
+/**
+ * Scan Pantry Vision: Extract ingredients from photo (Supports Base64 or Image URL)
+ */
+const scanPantryImage = async ({ imageBase64, imageUrl }) => {
+  let targetBase64 = imageBase64;
+
+  // Auto-fetch if image URL is passed instead of base64
+  const potentialUrl = imageUrl || (typeof imageBase64 === "string" && imageBase64.startsWith("http") ? imageBase64 : null);
+
+  if (potentialUrl) {
+    try {
+      const fetchRes = await fetch(potentialUrl);
+      const arrayBuffer = await fetchRes.arrayBuffer();
+      targetBase64 = Buffer.from(arrayBuffer).toString("base64");
+    } catch (err) {
+      console.warn("Failed to fetch image from URL, using fallback:", err.message);
+    }
+  }
+
   const promptText = `
 Analisis foto kulkas/meja dapur ini dan ekstrak daftar bahan makanan yang terlihat.
 Kembalikan respon JSON persis seperti berikut:
@@ -111,37 +255,45 @@ Kembalikan respon JSON persis seperti berikut:
 }
 `;
 
-  if (aiClient && imageBase64) {
-    try {
-      // Clean base64 string if data URI scheme is present
-      const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+  const aiClient = getAiClient();
 
-      const response = await aiClient.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: [
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: cleanBase64,
+  if (aiClient && targetBase64) {
+    const cleanBase64 = targetBase64.replace(/^data:image\/\w+;base64,/, "");
+    const candidateModels = ["gemini-2.5-flash"];
+
+
+
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await aiClient.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: cleanBase64,
+              },
             },
+            { text: promptText },
+          ],
+          config: {
+            responseMimeType: "application/json",
           },
-          { text: promptText },
-        ],
-        config: {
-          responseMimeType: "application/json",
-        },
-      });
+        });
 
-      const responseText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (responseText) {
-        return JSON.parse(responseText);
+        const responseText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (responseText) {
+          return JSON.parse(responseText);
+        }
+      } catch (err) {
+        console.warn(`Gemini Vision API Call with model ${modelName} failed:`, err.message);
       }
-    } catch (err) {
-      console.error("Gemini Vision API Call failed, switching to smart fallback:", err.message);
     }
   }
 
-  // Mock response for Pantry Scan
+
+
   return {
     detectedIngredients: [
       { name: "Telur Ayam", estimatedQuantity: "4 butir", confidence: 0.95 },
@@ -153,14 +305,14 @@ Kembalikan respon JSON persis seperti berikut:
 };
 
 /**
- * Helper to generate smart fallback recipes when testing locally without AI key
+ * Helper to generate smart fallback recipes when API key is missing or failing
  */
 function getMockRecipes(ingredients, tools, maxDurationMinutes) {
   const mainNames = ingredients.map((i) => i.name).join(", ");
   return {
     recipes: [
       {
-        id: "recipe-mock-1",
+        id: `recipe-mock-1-${Date.now()}`,
         title: `Nasi Goreng Spesial Zero-Waste (${ingredients[0]?.name || "Bahan Utama"})`,
         description: `Resep cepat hemat memanfaatkan ${mainNames} yang ada di kosan.`,
         prepTimeMinutes: Math.min(12, maxDurationMinutes),
@@ -184,7 +336,7 @@ function getMockRecipes(ingredients, tools, maxDurationMinutes) {
         ],
       },
       {
-        id: "recipe-mock-2",
+        id: `recipe-mock-2-${Date.now()}`,
         title: "Omelet Bumbu Kecap Hemat",
         description: "Kreasi olahan cepat dalam waktu kurang dari 15 menit.",
         prepTimeMinutes: 10,
@@ -213,4 +365,7 @@ function getMockRecipes(ingredients, tools, maxDurationMinutes) {
 module.exports = {
   generateRecipes,
   scanPantryImage,
+  getRecipeHistory,
+  clearRecipeHistory,
 };
+
