@@ -32,6 +32,7 @@ const swaggerDocument = {
     { name: "AI Kitchen", description: "AI Recipe Generator, Vision Scan, & History" },
     { name: "Pantry Tracker", description: "Manajemen Stok Bahan Makanan" },
     { name: "Favorites", description: "Manajemen Resep Favorit" },
+    { name: "Savings", description: "Pencatatan & Dashboard Penghematan Zero-Waste" },
   ],
   paths: {
     "/api/auth/register": {
@@ -317,6 +318,54 @@ const swaggerDocument = {
         responses: {
           200: { description: "Resep favorit berhasil dihapus" },
           404: { description: "Resep favorit tidak ditemukan atau tidak memiliki izin" },
+        },
+      },
+    },
+    "/api/savings": {
+      post: {
+        tags: ["Savings"],
+        summary: "Simpan riwayat penghematan saat selesai memasak",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["recipeTitle", "moneySavedRupiah", "foodSavedKg"],
+                properties: {
+                  recipeTitle: { type: "string", example: "Nasi Goreng Spesial Zero-Waste" },
+                  moneySavedRupiah: { type: "number", example: 18000 },
+                  foodSavedKg: { type: "number", example: 0.4 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: "Catatan saving berhasil dibuat" },
+          400: { description: "Validation error" },
+          401: { description: "Unauthorized" },
+        },
+      },
+      get: {
+        tags: ["Savings"],
+        summary: "Ambil seluruh riwayat penghematan user (urutan terbaru)",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: "Daftar riwayat saving berhasil diambil" },
+          401: { description: "Unauthorized" },
+        },
+      },
+    },
+    "/api/savings/summary": {
+      get: {
+        tags: ["Savings"],
+        summary: "Ambil ringkasan total penghematan dan persentase pertumbuhan bulanan",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: "Ringkasan summary saving berhasil diambil" },
+          401: { description: "Unauthorized" },
         },
       },
     },

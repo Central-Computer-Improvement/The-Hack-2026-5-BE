@@ -21,6 +21,7 @@ model User {
   pantryItems     PantryItem[]
   recipeHistories RecipeHistory[]
   favorites       FavoriteRecipe[]
+  savingRecords   SavingRecord[]
 }
 
 model PantryItem {
@@ -63,4 +64,14 @@ model FavoriteRecipe {
   estimatedSavings   Json     @default("{}")
   steps              Json     @default("[]")
   createdAt          DateTime @default(now())
+}
+
+model SavingRecord {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipeTitle      String
+  moneySavedRupiah Int
+  foodSavedKg      Float
+  createdAt        DateTime @default(now())
 }

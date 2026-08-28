@@ -5,6 +5,7 @@ const authRoutes = require("./routes/auth.routes");
 const aiRoutes = require("./routes/ai.routes");
 const favoritesRoutes = require("./routes/favorites.routes");
 const pantryRoutes = require("./routes/pantry.routes");
+const savingsRoutes = require("./routes/savings.routes");
 const setupSwagger = require("./config/swagger");
 
 const app = express();
@@ -46,6 +47,11 @@ app.get("/", (req, res) => {
         addPantry: "POST /api/pantry (Bearer Token required)",
         updatePantry: "PUT /api/pantry/:id (Bearer Token required)",
         deletePantry: "DELETE /api/pantry/:id (Bearer Token required)"
+      },
+      savings: {
+        recordSaving: "POST /api/savings (Bearer Token required)",
+        getSavings: "GET /api/savings (Bearer Token required)",
+        getSummary: "GET /api/savings/summary (Bearer Token required)"
       }
     }
   });
@@ -56,6 +62,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/favorites", favoritesRoutes);
 app.use("/api/pantry", pantryRoutes);
+app.use("/api/savings", savingsRoutes);
 
 
 

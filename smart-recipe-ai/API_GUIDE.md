@@ -220,7 +220,155 @@ Mengambil riwayat resep yang pernah dihasilkan AI (**Maksimal 10 riwayat terbaru
 
 ---
 
+### 5. Savings & Zero-Waste Impact Tracker (`/api/savings`)
+
+Fitur ini digunakan untuk mencatat dan melacak dampak penghematan uang (Rupiah) dan makanan yang diselamatkan (Kg) ketika pengguna telah **menyelesaikan memasak suatu resep**.
+
+#### 🔹 `POST /api/savings` (Protected)
+Menyimpan riwayat penghematan ketika pengguna selesai memasak (`Finish Recipe`).
+- **Headers**: `Authorization: Bearer <token>`, `Content-Type: application/json`
+- **Request Body**:
+  ```json
+  {
+    "recipeTitle": "Nasi Goreng Spesial Zero-Waste",
+    "moneySavedRupiah": 18000,
+    "foodSavedKg": 0.4
+  }
+  ```
+- **Response Success (201)**:
+  ```json
+  {
+    "success": true,
+    "message": "Saving record created successfully",
+    "data": {
+      "id": "40ce7b38-e5d0-465b-8b4c-9e453474ae13",
+      "userId": "d748f219-c782-4f36-a364-e4cfa2281861",
+      "recipeTitle": "Nasi Goreng Spesial Zero-Waste",
+      "moneySavedRupiah": 18000,
+      "foodSavedKg": 0.4,
+      "createdAt": "2026-08-28T11:03:33.456Z"
+    }
+  }
+  ```
+
+#### 🔹 `GET /api/savings` (Protected)
+Mengambil daftar riwayat seluruh resep yang pernah diselesaikan dan disimpan oleh pengguna (diurutkan dari yang terbaru).
+- **Headers**: `Authorization: Bearer <token>`
+- **Response Success (200)**:
+  ```json
+  {
+    "success": true,
+    "count": 1,
+    "data": {
+      "savings": [
+        {
+          "id": "40ce7b38-e5d0-465b-8b4c-9e453474ae13",
+          "userId": "d748f219-c782-4f36-a364-e4cfa2281861",
+          "recipeTitle": "Nasi Goreng Spesial Zero-Waste",
+          "moneySavedRupiah": 18000,
+          "foodSavedKg": 0.4,
+          "createdAt": "2026-08-28T11:03:33.456Z"
+        }
+      ]
+    }
+  }
+  ```
+
+#### 🔹 `GET /api/savings/summary` (Protected)
+Mengambil ringkasan metrik akumulasi total penghematan serta perbandingan bulan ini vs bulan lalu untuk **Savings Dashboard**.
+- **Headers**: `Authorization: Bearer <token>`
+- **Response Success (200)**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "totalMoneySaved": 18000,
+      "totalFoodSaved": 0.4,
+      "thisMonth": 18000,
+      "lastMonth": 0,
+      "growthPercentage": 0
+    }
+  }
+  ```
+  *(Catatan: Jika `lastMonth` bernilai `0`, `growthPercentage` aman bernilai `0` tanpa menyebabkan `Infinity`/`NaN`)*.
+
+---
+
+## 🔄 Alur Integrasi Frontend untuk Fitur Savings (End-to-End Flow)
+
+Berikut adalah panduan alur kerja (*flow*) implementasi di sisi Frontend:
+
+```text
+[1. Generate Recipe]
+      │
+      ▼ (POST /api/ai/generate-recipes)
+      │ Respon resep memiliki:
+      │ - recipe.title
+      │ - recipe.estimatedSavings.moneySavedRupiah
+      │ - recipe.estimatedSavings.foodSavedKg
+      │ - recipe.steps
+      ▼
+[2. Recipe Detail Page]
+      │ User melihat bahan, alat, dan badge Zero-Waste Impact
+      │ Tombol: [ 🍳 Start Cooking ]
+      ▼
+[3. Cooking Mode (Step-by-Step)]
+      │ User menjalankan panduan memasak langkah per langkah (Step 1, 2, ..., N)
+      ▼
+[4. Selesaikan Memasak (Finish Recipe)]
+      │ Di langkah terakhir (currentStep === steps.length - 1), tampilkan tombol:
+      │ [ ✅ Selesai Memasak & Simpan ke Dashboard ]
+      ▼
+[5. Panggil API Simpan (POST /api/savings)]
+      │ Frontend mengirim payload:
+      │ {
+      │   recipeTitle: recipe.title,
+      │   moneySavedRupiah: recipe.estimatedSavings.moneySavedRupiah,
+      │   foodSavedKg: recipe.estimatedSavings.foodSavedKg
+      │ }
+      ▼
+[6. Arahkan ke Savings Dashboard (/savings)]
+      │ Frontend memanggil:
+      │ - GET /api/savings/summary -> Tampilkan kartu total Rp, total Kg, & growth %
+      │ - GET /api/savings         -> Tampilkan list riwayat resep yang telah dimasak
+```
+
+### 💡 Contoh Kode Panggilan API di Komponen `CookingMode.tsx`:
+
+```tsx
+// Fungsi yang dipanggil saat user menekan "Finish Recipe" pada step terakhir
+const handleFinishCooking = async () => {
+  try {
+    const token = localStorage.getItem("token");
+    const response = await fetch("http://localhost:5000/api/savings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        recipeTitle: recipe.title,
+        moneySavedRupiah: recipe.estimatedSavings?.moneySavedRupiah || 0,
+        foodSavedKg: recipe.estimatedSavings?.foodSavedKg || 0,
+      }),
+    });
+
+    const result = await response.json();
+    if (result.success) {
+      alert("Selamat! Penghematan Anda berhasil disimpan.");
+      // Redirect ke halaman Savings Dashboard
+      router.push("/savings");
+    }
+  } catch (error) {
+    console.error("Gagal menyimpan saving:", error);
+  }
+};
+```
+
+---
+
 ## 🛠️ Catatan untuk Tim Frontend
 
 1. **Stok Pantry**: Tidak ada pemotongan stok otomatis saat mencari resep. Pengguna bebas memasukkan bahan atau menggunakan tombol scan vision.
-2. **Coba via Swagger**: Tim frontend sangat disarankan mencoba semua endpoint secara visual di `http://localhost:5000/api-docs` sebelum mengintegrasikan ke komponen UI.
+2. **Pencatatan Savings**: Nilai penghematan hanya dicatat ketika pengguna menekan tombol selesai memasak di Cooking Mode (`POST /api/savings`), bukan saat resep di-generate pertama kali.
+3. **Coba via Swagger**: Tim frontend sangat disarankan mencoba semua endpoint secara visual di `http://localhost:5000/api-docs` sebelum mengintegrasikan ke komponen UI.

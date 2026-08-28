@@ -147,6 +147,34 @@ server.listen(0, async () => {
     const getFavData = await getFavRes.json();
     console.log("   Get Favorites Status:", getFavRes.status, "| Count:", getFavData.count);
 
+    // 10. Savings Endpoints
+    console.log("\n🔟 Testing Savings API (POST, GET /api/savings, GET /api/savings/summary)");
+    const postSavingRes = await fetch(`${baseUrl}/api/savings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${activeToken}`,
+      },
+      body: JSON.stringify({
+        recipeTitle: "Nasi Goreng Spesial Zero-Waste",
+        moneySavedRupiah: 18000,
+        foodSavedKg: 0.4,
+      }),
+    });
+    const postSavingData = await postSavingRes.json();
+    console.log("   POST /api/savings Status:", postSavingRes.status, "| Saved ID:", postSavingData.data?.id);
+
+    const getSavingsRes = await fetch(`${baseUrl}/api/savings`, {
+      headers: { Authorization: `Bearer ${activeToken}` },
+    });
+    const getSavingsData = await getSavingsRes.json();
+    console.log("   GET /api/savings Status:", getSavingsRes.status, "| Count:", getSavingsData.count);
+
+    const getSummaryRes = await fetch(`${baseUrl}/api/savings/summary`, {
+      headers: { Authorization: `Bearer ${activeToken}` },
+    });
+    const getSummaryData = await getSummaryRes.json();
+    console.log("   GET /api/savings/summary Status:", getSummaryRes.status, "| Data:", JSON.stringify(getSummaryData.data));
 
     console.log("\n✨ ALL TESTS PASSED SUCCESSFULLY! ✨\n");
   } catch (err) {
