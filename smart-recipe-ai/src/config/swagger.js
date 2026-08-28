@@ -263,6 +263,7 @@ const swaggerDocument = {
         ],
         responses: {
           200: { description: "Bahan makanan berhasil dihapus" },
+          404: { description: "Bahan makanan tidak ditemukan atau tidak memiliki izin" },
         },
       },
     },
@@ -315,6 +316,7 @@ const swaggerDocument = {
         ],
         responses: {
           200: { description: "Resep favorit berhasil dihapus" },
+          404: { description: "Resep favorit tidak ditemukan atau tidak memiliki izin" },
         },
       },
     },

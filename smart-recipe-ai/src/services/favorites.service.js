@@ -103,19 +103,28 @@ const getFavorites = async (userId) => {
 const removeFavorite = async (userId, favoriteId) => {
   if (prisma) {
     try {
-      await prisma.favoriteRecipe.deleteMany({
+      const result = await prisma.favoriteRecipe.deleteMany({
         where: { id: favoriteId, userId },
       });
+      if (result.count === 0) {
+        const error = new Error("Favorite recipe not found or unauthorized");
+        error.statusCode = 404;
+        throw error;
+      }
       return { message: "Favorite recipe removed successfully" };
     } catch (err) {
+      if (err.statusCode) throw err;
       console.warn("DB operation failed, using in-memory for remove favorite:", err.message);
     }
   }
 
   const userFavs = inMemoryFavorites.get(userId);
-  if (userFavs) {
-    userFavs.delete(favoriteId);
+  if (!userFavs || !userFavs.has(favoriteId)) {
+    const error = new Error("Favorite recipe not found or unauthorized");
+    error.statusCode = 404;
+    throw error;
   }
+  userFavs.delete(favoriteId);
   return { message: "Favorite recipe removed successfully" };
 };
 

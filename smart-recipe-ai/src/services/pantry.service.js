@@ -110,19 +110,28 @@ const updatePantryItem = async (userId, itemId, updateData) => {
 const deletePantryItem = async (userId, itemId) => {
   if (prisma) {
     try {
-      await prisma.pantryItem.deleteMany({
+      const result = await prisma.pantryItem.deleteMany({
         where: { id: itemId, userId },
       });
+      if (result.count === 0) {
+        const error = new Error("Pantry item not found or unauthorized");
+        error.statusCode = 404;
+        throw error;
+      }
       return { message: "Pantry item deleted successfully" };
     } catch (err) {
+      if (err.statusCode) throw err;
       console.warn("DB operation failed, using in-memory store for delete pantry:", err.message);
     }
   }
 
   const userPantry = inMemoryPantry.get(userId);
-  if (userPantry) {
-    userPantry.delete(itemId);
+  if (!userPantry || !userPantry.has(itemId)) {
+    const error = new Error("Pantry item not found or unauthorized");
+    error.statusCode = 404;
+    throw error;
   }
+  userPantry.delete(itemId);
   return { message: "Pantry item deleted successfully" };
 };
 
